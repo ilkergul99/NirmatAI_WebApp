@@ -1,0 +1,79 @@
+- name: Create pod and run containers
+  hosts: localhost
+  vars:
+    # The desired state of the containers (started/stopped)
+    container_state: started
+
+    # Set to true to use GPUs, false to not use GPUs
+    use_gpus: false
+
+    # Set to true to start only the development container
+    start_dev_only: false
+
+    # Pod name derived from environment variable
+    pod_name: "{{ lookup('env', 'POD_NAME') | default(lookup('env', 'USER'), true) | regex_replace('/', '_') }}"
+
+    # Common environment variables for the development container
+    common_env:
+      MLFLOW_TRACKING_URI: "http://host.containers.internal:5000"
+      POD_NAME: "{{ pod_name }}"
+
+  tasks:
+    # Build the client image only if not in dev-only mode
+    - name: Build client image
+      containers.podman.podman_image:
+        name: nirmatai_webapp_client
+        state: build
+        force: true
+        build:
+          file: ./Dockerfile.client
+      when: not start_dev_only | bool
+
+    # Always build the dev image
+    - name: Build development image
+      containers.podman.podman_image:
+        name: nirmatai_webapp_dev
+        state: build
+        force: true
+        build:
+          file: ./Dockerfile.dev
+
+    # Ensure pod name and container state are defined
+    - name: Ensure pod name and container state are set
+      ansible.builtin.assert:
+        that:
+          - pod_name is defined
+          - container_state is defined
+        fail_msg: "pod_name or container_state is not defined."
+
+    # Create the pod and expose port 8501 during pod creation
+    - name: Create pod
+      containers.podman.podman_pod:
+        name: "{{ pod_name }}"
+        state: "{{ container_state }}"
+        recreate: true
+        ports:
+          - "8501:8501"  # Expose port 8501 when creating the pod
+
+    # Create and run client container in the pod (if not dev-only)
+    - name: Create and run client container
+      containers.podman.podman_container:
+        name: "{{ pod_name }}_client"
+        image: nirmatai_webapp_client:latest
+        state: "{{ container_state }}"
+        pod: "{{ pod_name }}"
+        detach: true
+      when: not start_dev_only | bool
+
+    # Create and run the dev container inside the pod
+    - name: Create and run dev container
+      containers.podman.podman_container:
+        name: "{{ pod_name }}_dev"
+        image: nirmatai_webapp_dev:latest
+        state: "{{ container_state }}"
+        detach: true
+        pod: "{{ pod_name }}"
+        volume:
+          - ./:/app  # Mount the current directory
+        env: "{{ common_env }}"
+ 
