@@ -19,16 +19,6 @@ run-dev:
 	-e "use_gpus=false" \
 	-e "start_dev_only=true" 
 
-	# Wait a moment to ensure the server is up
-	sleep 5
-
-	# Capture the ansible_host dynamically and export it
-	ANSIBLE_HOST=$(ansible localhost -m setup -a 'filter=ansible_host' --tree /dev/null | grep ansible_host | cut -d'"' -f4)
-	export ANSIBLE_HOST
-
-	# Call the script to open the browser or connect to the URL
-	bash open_webapp.sh
-
 # Stop the Ansible playbook and set the container state to 'absent'
 stop:
 	@echo "Stopping the playbook..."
